@@ -20,6 +20,20 @@ def _translation_files():
     )
 
 
+def _all_locale_files():
+    """Every shipped locale file, including the ground truth, sorted for stable ids."""
+    return sorted(p.name for p in TRANSLATIONS_DIR.glob("*.json"))
+
+
+def _string_leaves(data, path=""):
+    """Yield ``(dotted_path, value)`` for every string leaf in a nested dict."""
+    if isinstance(data, dict):
+        for key, value in data.items():
+            yield from _string_leaves(value, f"{path}.{key}" if path else key)
+    elif isinstance(data, str):
+        yield path, data
+
+
 class TestCompareJsonStructures:
     """Test suite for compare_json_structures function."""
 
@@ -470,4 +484,17 @@ class TestTranslationFilesParity:
         assert not errors, (
             f"{locale_file} is out of sync with {GROUND_TRUTH_LOCALE}:\n"
             + "\n".join(errors)
+        )
+
+    @pytest.mark.parametrize("locale_file", _all_locale_files())
+    def test_locale_has_no_empty_strings(self, locale_file):
+        # compare_json_structures only checks key structure, not leaf values, so a
+        # key whose value is an empty string would pass the parity test above yet
+        # still render blank -- the exact symptom this guards against. Assert every
+        # string leaf carries actual text.
+        data = json.loads((TRANSLATIONS_DIR / locale_file).read_text(encoding="utf-8"))
+        empty = [path for path, value in _string_leaves(data) if not value.strip()]
+        assert not empty, (
+            f"{locale_file} has empty translation values (they render blank):\n"
+            + "\n".join(empty)
         )
